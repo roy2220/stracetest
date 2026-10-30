@@ -18,7 +18,10 @@ import (
 	"testing"
 )
 
-const testNameSuffix = "/strace"
+const (
+	realTestNameSuffix = "/real"
+	fakeTestNameSuffix = "/fake"
+)
 
 var (
 	testExePath   string
@@ -79,11 +82,11 @@ func Run(
 
 	if tempDir := os.Getenv(tempDirEnvKey); tempDir != "" {
 		// is already under strace
-		doRun(testName+testNameSuffix, func(tb testing.TB) { testFunc(tb, tempDir) })
+		doRun(testName+realTestNameSuffix, func(tb testing.TB) { testFunc(tb, tempDir) })
 		return
 	}
 
-	doRun(testName, func(tb testing.TB) {
+	doRun(testName+fakeTestNameSuffix, func(tb testing.TB) {
 		tb.Helper()
 
 		var straceOutputFile *os.File
@@ -126,13 +129,13 @@ func buildTestCmd(tb testing.TB, straceArgs []string, straceOutputFile *os.File)
 	tb.Helper()
 
 	tempDir := tb.TempDir()
+	testName := strings.TrimSuffix(tb.Name(), fakeTestNameSuffix) + realTestNameSuffix
 
 	var args []string
-	for _, straceArg := range DefaultStraceArgs {
-		args = append(args, strings.ReplaceAll(straceArg, "{{TempDir}}", tempDir))
-	}
-	for _, straceArg := range straceArgs {
-		args = append(args, strings.ReplaceAll(straceArg, "{{TempDir}}", tempDir))
+	for _, vs := range [...][]string{DefaultStraceArgs, straceArgs} {
+		for _, v := range vs {
+			args = append(args, strings.ReplaceAll(v, "{{TempDir}}", tempDir))
+		}
 	}
 	args = append(args, "--follow-forks")
 	if straceOutputFile == nil {
@@ -144,7 +147,7 @@ func buildTestCmd(tb testing.TB, straceArgs []string, straceOutputFile *os.File)
 	args = append(args, os.Args[1:]...)
 	// override existing -test.run and -test.count
 	args = append(args,
-		"-test.run", buildTestRunPattern(tb.Name()+testNameSuffix),
+		"-test.run", buildTestRunPattern(testName),
 		"-test.count", "1",
 	)
 
@@ -158,16 +161,16 @@ func buildTestCmd(tb testing.TB, straceArgs []string, straceOutputFile *os.File)
 }
 
 func buildTestRunPattern(testName string) string {
-	var builder strings.Builder
+	var b []byte
 	for s := testName; s != ""; {
 		var part string
 		part, s, _ = strings.Cut(s, "/")
-		if builder.Len() >= 1 {
-			builder.WriteByte('/')
+		if len(b) >= 1 {
+			b = append(b, '/')
 		}
-		builder.WriteByte('^')
-		builder.WriteString(regexp.QuoteMeta(part))
-		builder.WriteByte('$')
+		b = append(b, '^')
+		b = append(b, regexp.QuoteMeta(part)...)
+		b = append(b, '$')
 	}
-	return builder.String()
+	return string(b)
 }
