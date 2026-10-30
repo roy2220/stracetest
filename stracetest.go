@@ -95,12 +95,23 @@ func Run(
 	})
 }
 
+// DefaultStraceArgs holds strace arguments prepended to those of every [Run]
+// call. It should be set in an init function of a *_test.go file, e.g.:
+//
+//	func init() {
+//		stracetest.DefaultStraceArgs = []string{"--quiet=all", "--seccomp-bpf"}
+//	}
+var DefaultStraceArgs []string
+
 func buildTestCmd(t *testing.T, straceArgs []string, straceOutputFile *os.File) *exec.Cmd {
 	t.Helper()
 
 	tempDir := t.TempDir()
 
 	var args []string
+	for _, straceArg := range DefaultStraceArgs {
+		args = append(args, strings.ReplaceAll(straceArg, "{{TempDir}}", tempDir))
+	}
 	for _, straceArg := range straceArgs {
 		args = append(args, strings.ReplaceAll(straceArg, "{{TempDir}}", tempDir))
 	}
