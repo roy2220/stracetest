@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package stracetest runs a Go subtest under strace with syscall fault
 // injection enabled. It lets you exercise error paths that are otherwise
 // hard to trigger deterministically, such as permission errors, disk-full
@@ -45,52 +43,73 @@ var initOnce = sync.OnceValue(func() error {
 
 // Run runs a subtest under strace.
 func Run(
-	t *testing.T,
+	tb testing.TB,
 	testName string,
-	testFunc func(t *testing.T, tempDir string),
+	testFunc func(tb testing.TB, tempDir string),
 	straceArgs ...string,
 ) {
-	t.Helper()
+	tb.Helper()
 
 	if err := initOnce(); err != nil {
-		t.Fatalf("stracetest: failed to init: %v", err)
+		tb.Fatalf("stracetest: failed to init: %v", err)
+	}
+
+	var doRun func(string, func(testing.TB))
+	switch v := tb.(type) {
+	case *testing.T:
+		doRun = func(testName string, testFunc func(testing.TB)) {
+			v.Run(testName, func(t *testing.T) {
+				testFunc(t)
+			})
+		}
+	case *testing.B:
+		doRun = func(testName string, testFunc func(testing.TB)) {
+			v.Run(testName, func(b *testing.B) {
+				testFunc(b)
+			})
+		}
+	default:
+		v.Fatalf("stracetest: %T is not supported", v)
 	}
 
 	if straceExePath == "" {
-		t.Run(testName, func(t *testing.T) { t.Skip("stracetest: strace not found in PATH") })
+		doRun(testName, func(tb testing.TB) { tb.Skip("stracetest: strace not found in PATH") })
 		return
 	}
 
 	if tempDir := os.Getenv(tempDirEnvKey); tempDir != "" {
 		// is already under strace
-		t.Run(testName+testNameSuffix, func(t *testing.T) { testFunc(t, tempDir) })
+		doRun(testName+testNameSuffix, func(tb testing.TB) { testFunc(tb, tempDir) })
 		return
 	}
 
-	t.Run(testName, func(t *testing.T) {
-		t.Helper()
+	doRun(testName, func(tb testing.TB) {
+		tb.Helper()
 
-		r, w, err := os.Pipe()
-		if err != nil {
-			t.Fatalf("stracetest: failed to create pipe: %v", err)
-		}
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			scanner := bufio.NewScanner(r)
-			for scanner.Scan() {
-				t.Log(scanner.Text())
+		var straceOutputFile *os.File
+		if _, ok := tb.(*testing.T); ok {
+			r, w, err := os.Pipe()
+			if err != nil {
+				tb.Fatalf("stracetest: failed to create pipe: %v", err)
 			}
-			_ = scanner.Err()
-			io.Copy(io.Discard, r)
-		})
-		t.Cleanup(func() {
-			w.Close()
-			wg.Wait()
-			r.Close()
-		})
-
-		if err := buildTestCmd(t, straceArgs, w).Run(); err != nil {
-			t.Fatalf("stracetest: failed to run test: %v", err)
+			var wg sync.WaitGroup
+			wg.Go(func() {
+				scanner := bufio.NewScanner(r)
+				for scanner.Scan() {
+					tb.Log(scanner.Text())
+				}
+				_ = scanner.Err()
+				io.Copy(io.Discard, r)
+			})
+			tb.Cleanup(func() {
+				w.Close()
+				wg.Wait()
+				r.Close()
+			})
+			straceOutputFile = w
+		}
+		if err := buildTestCmd(tb, straceArgs, straceOutputFile).Run(); err != nil {
+			tb.Fatalf("stracetest: failed to run test: %v", err)
 		}
 	})
 }
@@ -103,10 +122,10 @@ func Run(
 //	}
 var DefaultStraceArgs []string
 
-func buildTestCmd(t *testing.T, straceArgs []string, straceOutputFile *os.File) *exec.Cmd {
-	t.Helper()
+func buildTestCmd(tb testing.TB, straceArgs []string, straceOutputFile *os.File) *exec.Cmd {
+	tb.Helper()
 
-	tempDir := t.TempDir()
+	tempDir := tb.TempDir()
 
 	var args []string
 	for _, straceArg := range DefaultStraceArgs {
@@ -115,21 +134,25 @@ func buildTestCmd(t *testing.T, straceArgs []string, straceOutputFile *os.File) 
 	for _, straceArg := range straceArgs {
 		args = append(args, strings.ReplaceAll(straceArg, "{{TempDir}}", tempDir))
 	}
-	args = append(args,
-		"--follow-forks",
-		"--output=/dev/fd/3",
-	)
+	args = append(args, "--follow-forks")
+	if straceOutputFile == nil {
+		args = append(args, "--output=/dev/null")
+	} else {
+		args = append(args, "--output=/dev/fd/3")
+	}
 	args = append(args, "--", testExePath)
 	args = append(args, os.Args[1:]...)
 	// override existing -test.run and -test.count
 	args = append(args,
-		"-test.run", buildTestRunPattern(t.Name()+testNameSuffix),
+		"-test.run", buildTestRunPattern(tb.Name()+testNameSuffix),
 		"-test.count", "1",
 	)
 
-	cmd := exec.CommandContext(t.Context(), straceExePath, args...)
+	cmd := exec.CommandContext(tb.Context(), straceExePath, args...)
 	cmd.Env = append(os.Environ(), tempDirEnvKey+"="+tempDir)
-	cmd.ExtraFiles = []*os.File{straceOutputFile}
+	if straceOutputFile != nil {
+		cmd.ExtraFiles = []*os.File{straceOutputFile}
+	}
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd
 }

@@ -1,5 +1,3 @@
-//go:build linux
-
 package stracetest_test
 
 import (
@@ -14,7 +12,7 @@ import (
 func TestExample(t *testing.T) {
 	stracetest.Run(t, "open error injected",
 		// tempDir is the same directory {{TempDir}} expands to below.
-		func(t *testing.T, tempDir string) {
+		func(t testing.TB, tempDir string) {
 			_, err := os.ReadFile(tempDir + "/foo.txt")
 
 			t.Logf("got error: %v", err)
@@ -32,7 +30,7 @@ func TestExample(t *testing.T) {
 
 	stracetest.Run(t, "write error injected",
 		// tempDir is the same directory {{TempDir}} expands to below.
-		func(t *testing.T, tempDir string) {
+		func(t testing.TB, tempDir string) {
 			err := os.WriteFile(tempDir+"/bar.txt", []byte("bar"), 0644)
 
 			t.Logf("got error: %v", err)
