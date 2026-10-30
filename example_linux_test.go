@@ -46,3 +46,37 @@ func TestExample(t *testing.T) {
 		"--quiet=all",
 	)
 }
+
+func BenchmarkExample(b *testing.B) {
+	stracetest.Run(b, "write bypassed",
+		// tempDir is the same directory {{TempDir}} expands to below.
+		func(b testing.TB, tempDir string) {
+			f, err := os.OpenFile(tempDir+"/bar.txt", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.Cleanup(func() { f.Close() })
+
+			data := make([]byte, 1000000)
+			for b.(*testing.B).Loop() {
+				_, err := f.Write(data)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+
+			// fi, err := f.Stat()
+			// if err != nil {
+			//	b.Fatal(err)
+			// }
+			// if fi.Size() >= 1 {
+			//	b.Fatal("expected empty file")
+			// }
+		},
+		// Limit injection to this file; otherwise it hits every write.
+		"--trace-path={{TempDir}}/bar.txt",
+		"--trace=write",
+		"--inject=write:retval=1000000",
+		"--quiet=all",
+	)
+}
