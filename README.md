@@ -45,8 +45,8 @@ func TestExample(t *testing.T) {
 		},
 		// Limit injection to this file; otherwise it hits every openat.
 		"--trace-path={{TempDir}}/foo.txt",
-		"-e", "trace=openat",
-		"-e", "inject=openat:error=EACCES",
+		"--trace=openat",
+		"--inject=openat:error=EACCES",
 		"--quiet=all",
 	)
 
@@ -63,8 +63,8 @@ func TestExample(t *testing.T) {
 		},
 		// Limit injection to this file; otherwise it hits every write.
 		"--trace-path={{TempDir}}/bar.txt",
-		"-e", "trace=write",
-		"-e", "inject=write:error=ENOSPC",
+		"--trace=write",
+		"--inject=write:error=ENOSPC",
 		"--quiet=all",
 	)
 }
