@@ -9,7 +9,7 @@ are otherwise hard to trigger deterministically, such as permission errors,
 disk-full conditions, and I/O failures.
 
 > [!NOTE]
-> Except for the documentation, every line of code is human-crafted. **No AI slop included**.
+> The source code is handcrafted by a human. AI only assisted with docs and tests. No AI slop.
 
 ## Requirements
 
